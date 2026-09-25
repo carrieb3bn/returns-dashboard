@@ -1,0 +1,6 @@
+{
+  "name": "returns-dashboard",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=18" }
+}
