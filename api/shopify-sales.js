@@ -5,7 +5,9 @@
 // Required scope: read_reports.
 
 const API_VERSION = process.env.SHOPIFY_API_VERSION || '2025-10';
-const QUERY = 'FROM sales SHOW gross_sales, orders GROUP BY product_title ORDER BY orders DESC SINCE -90d UNTIL today LIMIT 250';
+// Non-product line items (return-protection fees etc.) to drop from results.
+const EXCLUDE = [/unlock free returns/i, /shipping protection/i, /package protection/i];
+const QUERY = 'FROM sales SHOW gross_sales, orders GROUP BY product_title ORDER BY orders DESC SINCE -90d UNTIL today LIMIT 1000';
 
 let cachedToken = null; // { token, expires }
 
@@ -50,7 +52,8 @@ export default async function handler(req, res) {
     const cols = (out?.tableData?.columns || []).map(c => c.name);
     const want = ['product_title', 'gross_sales', 'orders'];
     const rows = (out?.tableData?.rows || []).map(row =>
-      Array.isArray(row) ? want.map(k => row[cols.indexOf(k)]) : want.map(k => row[k]));
+      Array.isArray(row) ? want.map(k => row[cols.indexOf(k)]) : want.map(k => row[k]))
+      .filter(r => r[0] && !EXCLUDE.some(rx => rx.test(r[0])));
 
     res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=3600');
     return res.status(200).json({ rows, fetchedAt: new Date().toISOString() });
