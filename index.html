@@ -842,7 +842,7 @@ async function askClaude(prompt, outEl, btn) {
   } catch (e) {
     const msg = e?.status === 429 ? 'Too many requests right now. Try again in a minute.'
       : e?.status === 500 && /ANTHROPIC_API_KEY/.test(e.message) ? 'AI is off: ANTHROPIC_API_KEY isn’t set in Vercel.'
-      : 'Couldn’t get a response from Claude. Try again.';
+      : 'Couldn’t get a response from Claude.' + (e?.message && e.message !== 'request failed' ? ' ' + e.message : ' Try again.');
     outEl.insertAdjacentHTML('beforeend', '<div class="err">' + esc(msg) + '</div>');
     btn.textContent = idle;
   } finally { btn.disabled = false; }
