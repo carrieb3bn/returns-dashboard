@@ -873,8 +873,8 @@ async function loadShopify() {
     _shopify = {};
     rows.forEach(row => { _shopify[row[0]] = {revenue:parseFloat(row[1])||0, orders:parseInt(row[2])||0}; });
     DATA.products.forEach(p => { const s=_shopify[p.name]; p._rate = s&&s.orders>0 ? p.count/s.orders*100 : 0; });
-    const totalOrders = Object.values(_shopify).reduce((a,s)=>a+s.orders,0);
-    setStatus(`Shopify live · ${fmt(totalOrders)} orders (90d)`, 'ok');
+    const matched = DATA.products.filter(p => _shopify[p.name]).length;
+    setStatus(`Shopify live · 90d sales matched for ${matched} of ${DATA.products.length} products`, 'ok');
   } catch (e) {
     const msg = e?.code === 'not_configured' ? 'set Shopify env vars in Vercel'
       : e?.code === 'auth' ? 'Shopify token rejected'
