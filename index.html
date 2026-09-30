@@ -153,6 +153,15 @@ tr.exp td{background:var(--surface-2);font-size:12px;line-height:1.6;padding:10p
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion: reduce){.spinner{animation-duration:3s}}
 .err{color:var(--bad);font-size:12.5px}
+.imp-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin:-4px 0 12px}
+.imp-bar .btn{padding:5px 10px;font-size:12px;align-self:center}
+.imp-bar #imp-src{margin-right:auto}
+#imp-dlg{border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);padding:20px;width:min(480px,calc(100vw - 32px))}
+#imp-dlg::backdrop{background:rgba(0,0,0,.45)}
+#imp-dlg h3{font-size:16px;margin-bottom:4px}
+.imp-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:6px 0;font-size:13px;border-bottom:1px solid var(--line-soft)}
+.imp-row select{padding:6px 8px;border:1px solid var(--line);border-radius:6px;font:inherit;font-size:12.5px;background:var(--surface);color:var(--ink);max-width:58%}
+.imp-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
 .q-leg{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;margin-top:8px;color:var(--muted)}
 </style>
 </head>
@@ -166,6 +175,21 @@ tr.exp td{background:var(--surface-2);font-size:12px;line-height:1.6;padding:10p
     </div>
     <div class="status"><span class="dot" id="sh-dot"></span><span id="hdr-r">Connecting to Shopify…</span></div>
   </header>
+  <div class="imp-bar">
+    <span id="imp-src">Data: published snapshot</span>
+    <input type="file" id="imp-file" accept=".csv,text/csv" hidden>
+    <button class="btn" id="imp-btn">Import Loop export</button>
+    <button class="btn ghost" id="imp-dl" hidden title="Download a data.js to commit to GitHub so everyone sees this data">Download data.js</button>
+    <button class="btn ghost" id="imp-reset" hidden>Reset to published</button>
+  </div>
+  <dialog id="imp-dlg" aria-labelledby="imp-h">
+    <h3 id="imp-h">Import Loop export</h3>
+    <p class="mut" id="imp-meta" style="font-size:12px;margin-bottom:12px"></p>
+    <p style="font-size:12.5px;margin-bottom:8px">Check the columns below. Columns were matched automatically; change any that are wrong.</p>
+    <div id="imp-fields"></div>
+    <div class="err" id="imp-err" style="margin-top:8px"></div>
+    <div class="imp-actions"><button class="btn ghost" id="imp-cancel">Cancel</button><button class="btn" id="imp-go">Build dashboard</button></div>
+  </dialog>
   <nav class="tabs" role="tablist">
     <button class="tab on" data-t="overview">Overview</button>
     <button class="tab" data-t="fit">Fit Issues</button>
@@ -673,7 +697,9 @@ function trendBadge(dir, pct) {
 }
 function renderTrends() {
   const prods = TREND_DATA.products, weeks = TREND_DATA.weeks, half = Math.floor(weeks.length/2);
-  $('trend-notice').innerHTML = `Weeks are approximate — derived from the Loop return ID sequence mapped across the export window (${esc(DATA.dateRange)}). Use them for directional shifts and spikes, not exact calendar attribution.`;
+  $('trend-notice').innerHTML = DATA.weekBasis === 'date'
+    ? `Weeks are 7-day buckets by return date, starting at the first return in the export (${esc(DATA.dateRange)}).`
+    : `Weeks are approximate — derived from the Loop return ID sequence mapped across the export window (${esc(DATA.dateRange)}). Use them for directional shifts and spikes, not exact calendar attribution.`;
   $('trend-fn').textContent = `Pattern = mini line across ${weeks.length} weekly buckets. Change compares the last ${half} weeks with the first ${half}. Red = rising, green = falling (fewer returns is an improvement). Spike = a single week ≥2.5× the product’s average.`;
   const rising = prods.filter(p=>p.direction==='up').sort((a,b)=>b.pctChange-a.pctChange);
   const falling = prods.filter(p=>p.direction==='down').sort((a,b)=>a.pctChange-b.pctChange);
@@ -864,6 +890,12 @@ function initSample() {
 // ── Shopify (via /api/shopify-sales) ─────────────────────────────────────────────────
 let _shopifyStatus = 'Connecting to Shopify…';
 function setStatus(text, state) { _shopifyStatus = text; $('hdr-r').textContent = text; $('sh-dot').className = 'dot ' + (state||''); }
+function applyShopifyRates() {
+  if (!_shopify) return;
+  DATA.products.forEach(p => { const s=_shopify[p.name]; p._rate = s&&s.orders>0 ? p.count/s.orders*100 : 0; });
+  const matched = DATA.products.filter(p => _shopify[p.name]).length;
+  setStatus(`Shopify live · 90d sales matched for ${matched} of ${DATA.products.length} products`, 'ok');
+}
 async function loadShopify() {
   try {
     const r = await fetch('/api/shopify-sales');
@@ -872,9 +904,7 @@ async function loadShopify() {
     const rows = pl?.rows || [];
     _shopify = {};
     rows.forEach(row => { _shopify[row[0]] = {revenue:parseFloat(row[1])||0, orders:parseInt(row[2])||0}; });
-    DATA.products.forEach(p => { const s=_shopify[p.name]; p._rate = s&&s.orders>0 ? p.count/s.orders*100 : 0; });
-    const matched = DATA.products.filter(p => _shopify[p.name]).length;
-    setStatus(`Shopify live · 90d sales matched for ${matched} of ${DATA.products.length} products`, 'ok');
+    applyShopifyRates();
   } catch (e) {
     const msg = e?.code === 'not_configured' ? 'set Shopify env vars in Vercel'
       : e?.code === 'auth' ? 'Shopify token rejected'
@@ -920,5 +950,7 @@ if (startTab && document.querySelector(`.tab[data-t="${startTab}"]`)) switchTab(
 loadShopify();
 initSample();
 </script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="import.js"></script>
 
 </body></html>
