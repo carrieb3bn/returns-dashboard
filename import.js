@@ -20,7 +20,7 @@
     { key: 'date', label: 'Return date', pats: [/^return[ _]?created[ _]?at$/i, /^created[ _]?at$/i, /^created$/i, /^return[ _]?date$/i, /^date$/i, /created/i, /date/i] },
     { key: 'returnId', label: 'Return ID', pats: [/^return[ _]?id$/i, /^return[ _]?(number|#)$/i, /^id$/i, /return.*id/i] },
     { key: 'type', label: 'Product type', pats: [/^product[ _]?type$/i, /^type$/i, /category/i] },
-    { key: 'qty', label: 'Quantity / count', pats: [/^quantity$/i, /^qty$/i, /quantity/i, /^(return[ _]?)?count$/i, /^#?\s*(of\s*)?returns?$/i, /^total([ _]returns)?$/i, /^units?$/i, /count/i] },
+    { key: 'qty', label: 'Quantity / count', pats: [/^quantity$/i, /^qty$/i, /quantity/i, /^(return[ _]?)?count$/i, /^#?\s*(of\s*)?returns?$/i, /^total([ _]returns)?$/i, /^units?$/i, /number[ _]?of[ _]?(items|units)/i, /^items$/i, /item[ _]?count/i, /count/i] },
   ];
 
   const SIZE_TOKENS = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL', '1X', '2X', '3X', 'OS', 'S/M', 'M/L', 'L/XL', 'SM', 'ML'];
