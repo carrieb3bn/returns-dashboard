@@ -20,7 +20,7 @@
     { key: 'date', label: 'Return date', pats: [/^return[ _]?created[ _]?at$/i, /^created[ _]?at$/i, /^created$/i, /^return[ _]?date$/i, /^date$/i, /created/i, /date/i] },
     { key: 'returnId', label: 'Return ID', pats: [/^return[ _]?id$/i, /^return[ _]?(number|#)$/i, /^id$/i, /return.*id/i] },
     { key: 'type', label: 'Product type', pats: [/^product[ _]?type$/i, /^type$/i, /category/i] },
-    { key: 'qty', label: 'Quantity', pats: [/^quantity$/i, /^qty$/i, /quantity/i] },
+    { key: 'qty', label: 'Quantity / count', pats: [/^quantity$/i, /^qty$/i, /quantity/i, /^(return[ _]?)?count$/i, /^#?\s*(of\s*)?returns?$/i, /^total([ _]returns)?$/i, /^units?$/i, /count/i] },
   ];
 
   const SIZE_TOKENS = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL', '1X', '2X', '3X', 'OS', 'S/M', 'M/L', 'L/XL', 'SM', 'ML'];
@@ -80,18 +80,18 @@
   }
 
   // ── Build all datasets from normalized rows ─────────────────────────────────
-  function build(rows, map, fileName) {
+  function build(rows, map, fileName, preamble = '') {
     const get = (r, k) => map[k] ? String(r[map[k]] ?? '').trim() : '';
     const recs = [];
     rows.forEach((r, idx) => {
-      const name = get(r, 'product');
+      const name = get(r, 'product') || (map.product ? '' : get(r, 'sku').replace(/-(XXS|XS|S|M|L|XL|XXL|2XL|OS|\d{1,2})$/i, ''));
       if (!name || /unlock free returns|shipping protection|package protection/i.test(name)) return;
       const q = parseInt(get(r, 'qty'), 10);
       const d = map.date ? new Date(get(r, 'date')) : null;
       recs.push({
         name, reason: get(r, 'reason') || 'No reason given', comment: get(r, 'comment'), sku: get(r, 'sku'),
         size: sizeOf(get(r, 'variant'), get(r, 'sku')), type: get(r, 'type') || '',
-        qty: q > 0 && q < 50 ? q : 1, date: d && !isNaN(d) ? d : null,
+        qty: q > 0 && q < 1e6 ? q : 1, date: d && !isNaN(d) ? d : null,
         seq: map.returnId ? (parseFloat(get(r, 'returnId').replace(/[^\d.]/g, '')) || idx) : idx,
       });
     });
@@ -109,12 +109,22 @@
       weekOf = r => r.date ? weeks[Math.min(n - 1, Math.floor((r.date - start) / (7 * 864e5)))] : null;
       dateRange = `${fmtDate(min, min.getFullYear() !== max.getFullYear())} – ${fmtDate(max, true)}`;
       weekBasis = 'date';
+    } else if (!map.returnId) {
+      // Summary report (no dates or return IDs): no weekly trend possible.
+      weeks = []; weekOf = () => null;
+      const D = '(?:[A-Z][a-z]{2,8}\\.? \\d{1,2},? \\d{4}|\\d{1,2}/\\d{1,2}/\\d{2,4}|\\d{4}-\\d{2}-\\d{2})';
+      const m = preamble.match(new RegExp(`(${D})\\s*(?:-|–|to)\\s*(${D})`));
+      const a = m && new Date(m[1]), b = m && new Date(m[2]);
+      dateRange = a && b && !isNaN(a) && !isNaN(b)
+        ? `${fmtDate(a, a.getFullYear() !== b.getFullYear())} – ${fmtDate(b, true)}`
+        : fileName.replace(/\.(csv|xlsx?|xlsm)$/i, '');
+      weekBasis = 'none';
     } else {
       const sorted = recs.map(r => r.seq).sort((a, b) => a - b);
       const n = 13, cuts = Array.from({ length: n - 1 }, (_, i) => sorted[Math.floor((i + 1) * sorted.length / n)]);
       weeks = Array.from({ length: n }, (_, i) => 'W' + String(i + 1).padStart(2, '0'));
       weekOf = r => { let i = 0; while (i < cuts.length && r.seq >= cuts[i]) i++; return weeks[i]; };
-      dateRange = fileName.replace(/\.csv$/i, '');
+      dateRange = fileName.replace(/\.(csv|xlsx?|xlsm)$/i, '');
       weekBasis = 'sequence';
     }
 
@@ -159,7 +169,7 @@
     const half = Math.floor(weeks.length / 2);
     const newTREND = {
       weeks,
-      products: all.slice(0, 50).map(p => {
+      products: weekBasis === 'none' ? [] : all.slice(0, 50).map(p => {
         const vals = weeks.map(w => p.weekly[w] || 0);
         const first = vals.slice(0, half).reduce((a, b) => a + b, 0), last = vals.slice(weeks.length - half).reduce((a, b) => a + b, 0);
         const avg = vals.reduce((a, b) => a + b, 0) / (vals.length || 1);
@@ -258,8 +268,8 @@
 
   // ── Mapping dialog ──────────────────────────────────────────────────────────
   let _parsed = null;
-  function openMap(fileName, headers, rows) {
-    _parsed = { fileName, rows };
+  function openMap(fileName, headers, rows, preamble) {
+    _parsed = { fileName, rows, preamble: preamble || '' };
     const map = detect(headers);
     const opts = h => `<option value="">— none —</option>` + headers.map(x => `<option ${x === h ? 'selected' : ''}>${esc(x)}</option>`).join('');
     $('imp-fields').innerHTML = FIELDS.map(f => `<label class="imp-row"><span>${f.label}${f.required ? ' <b class="bad">*</b>' : ''}</span>
@@ -271,29 +281,57 @@
   function runBuild() {
     const map = {};
     document.querySelectorAll('#imp-fields select').forEach(s => { if (s.value) map[s.dataset.k] = s.value; });
-    const miss = FIELDS.filter(f => f.required && !map[f.key]).map(f => f.label);
+    const miss = FIELDS.filter(f => f.required && !map[f.key] && !(f.key === 'product' && map.sku)).map(f => f.label);
     if (miss.length) { $('imp-err').textContent = 'Pick a column for: ' + miss.join(', '); return; }
     try {
-      const ds = build(_parsed.rows, map, _parsed.fileName);
+      const ds = build(_parsed.rows, map, _parsed.fileName, _parsed.preamble);
       try { localStorage.setItem(LS_KEY, JSON.stringify(ds)); } catch (e) { /* too big or blocked: still applies for this visit */ }
       applyDatasets(ds);
       $('imp-dlg').close();
     } catch (e) { $('imp-err').textContent = e.message; }
   }
 
+  // Spreadsheet → {headers, rows}. Finds the header row (reports often have title rows above it).
+  function rowsFromMatrix(m) {
+    const clean = v => v instanceof Date ? v.toISOString() : String(v ?? '').trim();
+    m = m.map(r => r.map(clean)).filter(r => r.some(Boolean));
+    if (!m.length) return null;
+    const keyPats = FIELDS.filter(f => ['product', 'reason', 'sku', 'variant', 'qty'].includes(f.key)).flatMap(f => f.pats);
+    let best = 0, bestScore = -1;
+    m.slice(0, 25).forEach((r, i) => {
+      const score = r.filter(c => c && c.length < 60 && keyPats.some(rx => rx.test(c))).length;
+      if (score > bestScore) { bestScore = score; best = i; }
+    });
+    const seen = {};
+    const headers = m[best].map((h, i) => { let n = h || 'Column ' + (i + 1); if (seen[n]) n += ' (' + (++seen[n]) + ')'; else seen[n] = 1; return n; });
+    const rows = m.slice(best + 1).map(r => Object.fromEntries(headers.map((h, i) => [h, r[i] ?? ''])));
+    return { headers, rows, score: bestScore, preamble: m.slice(0, best).map(r => r.filter(Boolean).join(' ')).join(' ') };
+  }
+
   function onFile(file) {
     if (!file) return;
-    if (!window.Papa) { alertBar('CSV parser didn’t load. Refresh and try again.'); return; }
+    const isXlsx = /\.(xlsx|xlsm|xls)$/i.test(file.name);
     $('imp-src').textContent = 'Reading ' + file.name + '…';
+    const done = res => {
+      if (!res || !res.headers.length || !res.rows.length) { alertBar('That file has no rows.'); updateBar(); return; }
+      updateBar(); openMap(file.name, res.headers, res.rows, res.preamble);
+    };
+    const fail = msg => { alertBar('Couldn’t read the file: ' + msg); updateBar(); };
+    if (isXlsx) {
+      if (!window.XLSX) { alertBar('Excel reader didn’t load. Refresh and try again.'); return; }
+      file.arrayBuffer().then(buf => {
+        const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+        const parsed = wb.SheetNames.map(n => rowsFromMatrix(XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: '' }))).filter(Boolean);
+        parsed.sort((a, b) => b.score - a.score || b.rows.length - a.rows.length);
+        done(parsed[0]);
+      }).catch(e => fail(e.message));
+      return;
+    }
+    if (!window.Papa) { alertBar('CSV parser didn’t load. Refresh and try again.'); return; }
     Papa.parse(file, {
-      header: true, skipEmptyLines: 'greedy', worker: false,
-      complete: res => {
-        const headers = (res.meta.fields || []).filter(Boolean);
-        if (!headers.length || !res.data.length) { alertBar('That file has no rows.'); updateBar(); return; }
-        updateBar();
-        openMap(file.name, headers, res.data);
-      },
-      error: err => { alertBar('Couldn’t read the file: ' + err.message); updateBar(); },
+      header: false, skipEmptyLines: 'greedy', worker: false,
+      complete: res => done(rowsFromMatrix(res.data)),
+      error: err => fail(err.message),
     });
   }
   function alertBar(msg) { $('imp-src').innerHTML = '<span class="err">' + esc(msg) + '</span>'; }
