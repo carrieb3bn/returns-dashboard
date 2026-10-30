@@ -177,8 +177,8 @@ tr.exp td{background:var(--surface-2);font-size:12px;line-height:1.6;padding:10p
   </header>
   <div class="imp-bar">
     <span id="imp-src">Data: published snapshot</span>
-    <input type="file" id="imp-file" accept=".csv,text/csv" hidden>
-    <button class="btn" id="imp-btn">Import Loop export</button>
+    <input type="file" id="imp-file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+    <button class="btn" id="imp-btn" title="CSV or Excel (.xlsx)">Import Loop export</button>
     <button class="btn ghost" id="imp-dl" hidden title="Download a data.js to commit to GitHub so everyone sees this data">Download data.js</button>
     <button class="btn ghost" id="imp-reset" hidden>Reset to published</button>
   </div>
@@ -697,7 +697,9 @@ function trendBadge(dir, pct) {
 }
 function renderTrends() {
   const prods = TREND_DATA.products, weeks = TREND_DATA.weeks, half = Math.floor(weeks.length/2);
-  $('trend-notice').innerHTML = DATA.weekBasis === 'date'
+  $('trend-notice').innerHTML = DATA.weekBasis === 'none'
+    ? `This export is a summary report with no return dates, so weekly trends aren’t available. Import a Loop export with a return date column to see trends.`
+    : DATA.weekBasis === 'date'
     ? `Weeks are 7-day buckets by return date, starting at the first return in the export (${esc(DATA.dateRange)}).`
     : `Weeks are approximate — derived from the Loop return ID sequence mapped across the export window (${esc(DATA.dateRange)}). Use them for directional shifts and spikes, not exact calendar attribution.`;
   $('trend-fn').textContent = `Pattern = mini line across ${weeks.length} weekly buckets. Change compares the last ${half} weeks with the first ${half}. Red = rising, green = falling (fewer returns is an improvement). Spike = a single week ≥2.5× the product’s average.`;
@@ -951,6 +953,7 @@ loadShopify();
 initSample();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="import.js"></script>
 
 </body></html>
