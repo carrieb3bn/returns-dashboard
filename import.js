@@ -243,6 +243,7 @@
     replace(DATA, ds.DATA); replace(TREND_DATA, ds.TREND_DATA); replace(SKU_DATA, ds.SKU_DATA);
     replace(RETENTION_DATA, ds.RETENTION_DATA); replace(OUTLIERS_DATA, ds.OUTLIERS_DATA);
     if (typeof applyShopifyRates === 'function') applyShopifyRates();
+    if (typeof applyShopifyTrend === 'function') applyShopifyTrend();
     const sel = $('filter-type'); while (sel.options.length > 1) sel.remove(1);
     ['ai-out', 'fb-ai-out'].forEach(id => { const el = $(id); if (el) el.textContent = ''; });
     const on = document.querySelector('.tab.on')?.dataset.t || 'overview';
