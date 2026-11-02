@@ -697,7 +697,9 @@ function trendBadge(dir, pct) {
 }
 function renderTrends() {
   const prods = TREND_DATA.products, weeks = TREND_DATA.weeks, half = Math.floor(weeks.length/2);
-  $('trend-notice').innerHTML = DATA.weekBasis === 'none'
+  $('trend-notice').innerHTML = TREND_DATA.basis === 'shopify'
+    ? `Weekly returned units from Shopify refunds, by refund date (${esc(TREND_DATA.rangeLabel)}). Live from Shopify, so counts can differ slightly from the Loop export.`
+    : DATA.weekBasis === 'none'
     ? `This export is a summary report with no return dates, so weekly trends aren’t available. Import a Loop export with a return date column to see trends.`
     : DATA.weekBasis === 'date'
     ? `Weeks are 7-day buckets by return date, starting at the first return in the export (${esc(DATA.dateRange)}).`
@@ -898,6 +900,34 @@ function applyShopifyRates() {
   const matched = DATA.products.filter(p => _shopify[p.name]).length;
   setStatus(`Shopify live · 90d sales matched for ${matched} of ${DATA.products.length} products`, 'ok');
 }
+// Weekly return trend from Shopify (real refund dates). Used for Trends + spike outliers.
+let _shopifyTrend = null;
+const _MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const wkLabel = k => { const [y,m,d] = k.split('-').map(Number); return `${_MON[m-1]} ${d}`; };
+function applyShopifyTrend() {
+  if (!_shopifyTrend || !_shopifyTrend.products.length) return;
+  const t = _shopifyTrend, labels = t.weeks.map(wkLabel);
+  const prods = t.products.map(p => ({ ...p, weekly: Object.fromEntries(t.weeks.map((w,i) => [labels[i], p.weekly[w] || 0])) }));
+  Object.keys(TREND_DATA).forEach(k => delete TREND_DATA[k]);
+  Object.assign(TREND_DATA, { weeks: labels, products: prods, basis: 'shopify', rangeLabel: `${wkLabel(t.range.since)} – ${wkLabel(t.range.until)}, ${t.range.until.slice(0,4)}` });
+  const typeOf = n => (DATA.products.find(p => p.name === n) || {}).type || '—';
+  OUTLIERS_DATA.spikeOutliers = prods.map(p => {
+    const vals = labels.map(w => p.weekly[w]), avg = vals.reduce((a,b)=>a+b,0) / vals.length;
+    let best = null;
+    vals.forEach((v,i) => { if (v >= 5 && avg > 0 && v >= avg*2.5 && (!best || v/avg > best.multiple)) best = { week: labels[i], weekNum: i+1, count: v, weekAvg: Math.round(avg*10)/10, multiple: Math.round(v/avg*10)/10 }; });
+    return best && { name: p.name, ...best, cat: typeOf(p.name) };
+  }).filter(Boolean).sort((a,b) => b.multiple - a.multiple).slice(0, 10);
+  if (rendered.trends) { renderTrends(); renderTrendsChart(); }
+  if (rendered.outliers) renderOutliers();
+}
+async function loadShopifyTrend() {
+  try {
+    const r = await fetch('/api/shopify-returns-trend');
+    if (!r.ok) return;
+    _shopifyTrend = await r.json();
+    applyShopifyTrend();
+  } catch (e) { /* keep file-based trends */ }
+}
 async function loadShopify() {
   try {
     const r = await fetch('/api/shopify-sales');
@@ -950,6 +980,7 @@ rendered.overview = rendered.fit = true;
 const startTab = (location.hash||'').slice(1);
 if (startTab && document.querySelector(`.tab[data-t="${startTab}"]`)) switchTab(startTab);
 loadShopify();
+loadShopifyTrend();
 initSample();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
